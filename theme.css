@@ -1,0 +1,264 @@
+:root {
+  --coral: #e4562e;
+  --coral-deep: #c43b1e;
+  --sunset: #f18a3c;
+  --peach: #ffd8b8;
+  --cream: #fff6ee;
+  --sand: #fff1e4;
+  --teal: #0e7a82;
+  --teal-deep: #0a5960;
+  --ink: #1b2444;
+  --navy: #1b2a6b;
+  --navy-deep: #14204f;
+  --navy-soft: #f18a3c;
+  --ice: #fff4ea;
+  --muted: #6e5b54;
+  --white: #ffffff;
+  --line: #f0d2c2;
+  --shadow: rgba(180, 72, 32, 0.16);
+  --success: #1c7a4a;
+  --success-bg: #e7f6ee;
+  --error: #b42318;
+  --error-bg: #fdecea;
+  --info-bg: #e7f4f5;
+  --gold: #c4841d;
+  --plum: #5b4b96;
+  --focus: rgba(14, 122, 130, 0.22);
+}
+
+* { box-sizing: border-box; }
+
+html, body { min-height: 100%; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: 'Outfit', 'Segoe UI', sans-serif;
+  background-color: #fff6ee;
+  background-image:
+    radial-gradient(ellipse 90% 55% at -10% -10%, rgba(255, 150, 84, 0.55), transparent 58%),
+    radial-gradient(ellipse 70% 50% at 110% 0%, rgba(14, 122, 130, 0.32), transparent 52%),
+    radial-gradient(ellipse 55% 40% at 100% 100%, rgba(228, 86, 46, 0.28), transparent 55%),
+    radial-gradient(ellipse 45% 35% at 0% 100%, rgba(91, 75, 150, 0.2), transparent 50%),
+    linear-gradient(165deg, #fffaf5 0%, #ffe7d0 48%, #fff3e6 100%);
+  background-attachment: fixed;
+}
+
+.wordmark {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.14em;
+}
+
+.wordmark .sip { color: var(--coral); }
+.wordmark .amp {
+  color: var(--navy);
+  font-family: 'Outfit', sans-serif;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.62em;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.wordmark .paint { color: var(--teal); }
+
+.eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--coral-deep);
+  margin: 0 0 0.35rem;
+}
+
+.echelon {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--navy);
+  font-size: 0.78rem;
+  margin: 0.45rem 0 0.15rem;
+}
+
+.theme-line {
+  color: var(--teal);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  margin: 0 0 1rem;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: center;
+  margin: 0 0 1.15rem;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.38rem 0.7rem;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.pill.date { background: linear-gradient(180deg, #f18a3c, #e4562e); }
+.pill.place { background: linear-gradient(180deg, #14959c, #0e7a82); }
+.pill.cap { background: linear-gradient(180deg, #7464b8, #5b4b96); }
+
+.packages {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+  text-align: left;
+}
+
+.package-card {
+  background: var(--sand);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.65rem 0.55rem 0.7rem;
+}
+
+.package-card strong {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.package-card span {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 0.95rem;
+}
+
+.package-card.silver strong { color: #8a6244; }
+.package-card.gold strong { color: var(--gold); }
+.package-card.platinum strong { color: var(--plum); }
+
+.btn-primary {
+  width: 100%;
+  padding: 0.95rem 1.4rem;
+  background: linear-gradient(180deg, var(--sunset), var(--coral));
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  min-height: 52px;
+  box-shadow: 0 10px 22px rgba(228, 86, 46, 0.32);
+  transition: transform 0.12s, filter 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) { filter: brightness(1.05); }
+.btn-primary:active:not(:disabled) { transform: scale(0.98); }
+.btn-primary:disabled {
+  background: #c9b2a6;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 50;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--coral-deep);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1.5px solid var(--line);
+  border-radius: 50%;
+  box-shadow: 0 6px 18px var(--shadow);
+  cursor: pointer;
+}
+
+.theme-toggle svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.site-credit {
+  margin: 0.2rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: #a08b80;
+  text-align: center;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --coral: #ff8a62;
+  --coral-deep: #ffb199;
+  --sunset: #e4562e;
+  --cream: #1a1216;
+  --sand: #2a211c;
+  --teal: #7ed4d4;
+  --teal-deep: #b7ecec;
+  --ink: #f6efe9;
+  --navy: #d7e4ff;
+  --navy-deep: #ffe8df;
+  --navy-soft: #e4562e;
+  --ice: #2a211c;
+  --muted: #c4b2a8;
+  --white: #241811;
+  --line: #4a382f;
+  --shadow: rgba(0, 0, 0, 0.4);
+  --success: #8ddebe;
+  --success-bg: #143028;
+  --error: #f5a8a1;
+  --error-bg: #3a1c1c;
+  --info-bg: #163033;
+  --gold: #f0c36a;
+  --plum: #c4b6ef;
+  --focus: rgba(126, 212, 212, 0.25);
+}
+
+html[data-theme="dark"] body {
+  background-color: #140e12;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 0% 0%, rgba(228, 86, 46, 0.28), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, rgba(14, 122, 130, 0.3), transparent 52%),
+    radial-gradient(ellipse 50% 40% at 100% 100%, rgba(91, 75, 150, 0.22), transparent 50%),
+    linear-gradient(180deg, #1a1216, #120e12);
+}
+
+html[data-theme="dark"] .theme-toggle {
+  background: #2a211c;
+  color: #ffe8df;
+  border-color: #4a382f;
+}
+
+html[data-theme="dark"] .site-credit { color: #8d776c; }
+html[data-theme="dark"] .package-card { background: #2a211c; }

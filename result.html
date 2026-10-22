@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <script>try{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Confirm attendance | Sip &amp; Paint</title>
+  <link rel="icon" href="assets/Sip%20%26%20Paint%20poster.jpeg" type="image/jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,560&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="theme.css?v=2">
+  <style>
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 1.15rem 2rem;
+    }
+    .shell {
+      width: 100%;
+      max-width: 460px;
+      animation: riseIn 0.45s ease;
+    }
+    @keyframes riseIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card {
+      background: rgba(255, 250, 246, 0.95);
+      border-radius: 28px;
+      box-shadow: 0 18px 50px var(--shadow);
+      padding: 1.7rem 1.45rem 1.35rem;
+      text-align: center;
+      border: 1px solid rgba(255,255,255,0.8);
+    }
+    .wordmark { font-size: 2.5rem; }
+    .guest-name {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 1.45rem;
+      margin: 0.2rem 0 0.35rem;
+    }
+    .sub { color: var(--muted); margin: 0 0 1rem; line-height: 1.45; }
+    .when {
+      font-size: 0.92rem;
+      font-weight: 650;
+      color: var(--navy);
+      margin: 0 0 1rem;
+    }
+    fieldset {
+      border: 0;
+      padding: 0;
+      margin: 0 0 1rem;
+      text-align: left;
+    }
+    legend {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--coral-deep);
+      margin-bottom: 0.55rem;
+    }
+    .choices { display: grid; gap: 0.5rem; }
+    .choice {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      min-height: 52px;
+      padding: 0.7rem 0.9rem;
+      border: 1.5px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      cursor: pointer;
+      font-weight: 650;
+    }
+    .choice small { color: var(--muted); font-weight: 600; }
+    .choice:has(input:checked) {
+      border-color: var(--coral);
+      background: #fff4ec;
+      box-shadow: inset 3px 0 0 var(--coral);
+    }
+    .choice input { accent-color: var(--coral); width: 18px; height: 18px; }
+    .choice.disabled { opacity: 0.45; pointer-events: none; }
+    .panel { display: none; }
+    .panel.visible { display: block; }
+    .outcome {
+      padding: 1.4rem 1.1rem;
+      border-radius: 18px;
+    }
+    .outcome h2 {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 1.7rem;
+      margin: 0 0 0.4rem;
+    }
+    .outcome p { margin: 0.25rem 0; line-height: 1.5; }
+    .welcome {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 1.55rem;
+      line-height: 1.45;
+      margin: 0;
+      white-space: pre-line;
+    }
+    .mark {
+      width: 54px;
+      height: 54px;
+      margin: 0 auto 0.7rem;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 1.5rem;
+      color: #fff;
+      background: linear-gradient(180deg, var(--sunset), var(--coral));
+    }
+    .outcome.success { background: var(--success-bg); color: var(--success); }
+    .outcome.success .mark { background: var(--success); }
+    .outcome.already { background: var(--info-bg); color: var(--teal-deep); }
+    .outcome.already .mark { background: var(--teal); }
+    .outcome.error { background: var(--error-bg); color: var(--error); }
+    .status {
+      margin-top: 0.85rem;
+      padding: 0.8rem 0.9rem;
+      border-radius: 12px;
+      display: none;
+    }
+    .status.visible { display: block; }
+    .status.error { background: var(--error-bg); color: var(--error); }
+    .status.loading { background: var(--sand); color: var(--muted); }
+    .back { margin: 1rem 0 0; font-size: 0.92rem; }
+    .back a { color: var(--teal-deep); font-weight: 700; text-decoration: none; }
+    html[data-theme="dark"] .card { background: #241811; border-color: #4a382f; }
+    html[data-theme="dark"] .choice {
+      background: #2a211c;
+      color: var(--ink);
+      border-color: #4a382f;
+    }
+    html[data-theme="dark"] .choice:has(input:checked) { background: #3a261e; }
+    @media (max-width: 480px) {
+      body { padding-top: 3.6rem; }
+      .card { padding: 1.35rem 1.05rem 1.15rem; }
+      .wordmark { font-size: 2.15rem; }
+    }
+  </style>
+</head>
+<body>
+  <button type="button" id="themeToggle" class="theme-toggle" aria-label="Switch to dark mode" aria-pressed="false"></button>
+  <div class="shell">
+    <div class="card">
+      <p class="eyebrow">Vibe Curators</p>
+      <h1 class="wordmark"><span class="sip">Sip</span><span class="amp">&amp;</span><span class="paint">Paint</span></h1>
+      <p class="echelon">The Upper Echelon</p>
+      <p class="theme-line">Tequila Sunrise</p>
+
+      <div id="confirmPanel" class="panel">
+        <p class="guest-name" id="displayName">—</p>
+        <p class="sub">To be checked in, confirm the package that you booked.</p>
+        <fieldset>
+          <legend>Your package</legend>
+          <div class="choices">
+            <label class="choice">
+              <span><input type="radio" name="package" value="silver"> Silver</span>
+              <small>M800</small>
+            </label>
+            <label class="choice">
+              <span><input type="radio" name="package" value="gold"> Gold</span>
+              <small>M1,100</small>
+            </label>
+            <label class="choice">
+              <span><input type="radio" name="package" value="platinum"> Platinum</span>
+              <small>M1,300</small>
+            </label>
+          </div>
+        </fieldset>
+        <button type="button" class="btn-primary" id="confirmBtn" disabled>Confirm and check in</button>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+      </div>
+
+      <div id="welcomePanel" class="panel">
+        <div class="outcome success">
+          <div class="mark" aria-hidden="true">✓</div>
+          <p class="welcome" id="welcomeMessage">Finding your booking…</p>
+        </div>
+      </div>
+
+      <div id="errorPanel" class="panel">
+        <div class="outcome error">
+          <h2>Unable to confirm</h2>
+          <p id="errorMessage">Please go back and try again, or speak to the door team.</p>
+          <p style="margin-top:1rem;"><a href="index.html" class="btn-primary" style="display:inline-block;text-decoration:none;line-height:52px;">Try again</a></p>
+        </div>
+      </div>
+
+      <p class="back"><a href="index.html">← Back to check-in</a></p>
+    </div>
+    <footer class="site-credit">Designed &amp; Developed by Kutlo Molisana</footer>
+  </div>
+
+  <script src="theme.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id') || '';
+    const name = params.get('name') || '';
+
+    const confirmPanel = document.getElementById('confirmPanel');
+    const welcomePanel = document.getElementById('welcomePanel');
+    const errorPanel = document.getElementById('errorPanel');
+    const welcomeMessage = document.getElementById('welcomeMessage');
+    const confirmBtn = document.getElementById('confirmBtn');
+    const statusEl = document.getElementById('status');
+    let submitting = false;
+
+    function show(panel) {
+      [confirmPanel, welcomePanel, errorPanel].forEach((p) => p.classList.remove('visible'));
+      panel.classList.add('visible');
+    }
+
+    function selectedPackage() {
+      const chosen = document.querySelector('input[name="package"]:checked');
+      return chosen ? chosen.value : '';
+    }
+
+    document.querySelectorAll('input[name="package"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        confirmBtn.disabled = !selectedPackage();
+        statusEl.className = 'status';
+        statusEl.textContent = '';
+      });
+    });
+
+    function showWelcome(message) {
+      welcomeMessage.textContent = message;
+      show(welcomePanel);
+    }
+
+    async function prepare() {
+      if (!id || !name) {
+        document.getElementById('errorMessage').textContent = 'Missing check-in details. Please enter your name again.';
+        show(errorPanel);
+        return;
+      }
+      document.getElementById('displayName').textContent = name;
+      show(confirmPanel);
+      try {
+        const res = await fetch('/api/check-in', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (data.status === 'already_checked_in' && data.message) {
+          showWelcome(data.message);
+        }
+      } catch {
+        /* The confirm step still works if this lookup fails. */
+      }
+    }
+
+    confirmBtn.addEventListener('click', async () => {
+      if (submitting) return;
+      const guestPackage = selectedPackage();
+      if (!guestPackage) {
+        statusEl.className = 'status visible error';
+        statusEl.textContent = 'Please confirm the package you booked.';
+        return;
+      }
+      submitting = true;
+      confirmBtn.disabled = true;
+      statusEl.className = 'status visible loading';
+      statusEl.textContent = 'Checking you in…';
+      try {
+        const res = await fetch('/api/check-in/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: Number(id), name, package: guestPackage })
+        });
+        const data = await res.json();
+        if (data.message && (data.status === 'checked_in' || data.status === 'already_checked_in')) {
+          showWelcome(data.message);
+          return;
+        }
+        statusEl.className = 'status visible error';
+        statusEl.textContent = data.error || data.message || 'Please speak to the door team.';
+        submitting = false;
+        confirmBtn.disabled = false;
+      } catch {
+        statusEl.className = 'status visible error';
+        statusEl.textContent = 'Unable to reach the server. Please try again.';
+        submitting = false;
+        confirmBtn.disabled = false;
+      }
+    });
+
+    prepare();
+  </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "workshop-attendance-check-in",
+  "version": "2.0.0",
+  "description": "Sip & Paint attendance check-in for The Upper Echelon at Delicacy Treats",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed-database.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.2.2",
+    "express": "^4.18.2",
+    "multer": "^2.4.0",
+    "xlsx": "^0.18.5"
+  }
+}
