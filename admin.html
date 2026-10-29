@@ -483,6 +483,8 @@
     html[data-theme="dark"] .badge.silver { background: #3a2c26; color: #f0d2c2; }
     html[data-theme="dark"] .badge.gold { background: #3d3018; color: #f0c36a; }
     html[data-theme="dark"] .badge.platinum { background: #2c2640; color: #c4b6ef; }
+    html[data-theme="dark"] .package-detail td { background: #2a211c; }
+    html[data-theme="dark"] button.guest-name-btn { color: var(--navy-deep); }
     html[data-theme="dark"] .field input,
     html[data-theme="dark"] .field select,
     html[data-theme="dark"] .search-bar input,
@@ -495,7 +497,8 @@
     }
     html[data-theme="dark"] .filter-tabs button,
     html[data-theme="dark"] .action-btn.secondary,
-    html[data-theme="dark"] .btn-secondary {
+    html[data-theme="dark"] .btn-secondary,
+    html[data-theme="dark"] a.manage-link {
       background: #2a211c !important;
       color: #ffe8df !important;
       border-color: #4a382f !important;
@@ -511,6 +514,44 @@
     .badge.silver { background: #f4e6d8; color: #7a5a40; }
     .badge.gold { background: #fff1cc; color: #8a5a10; }
     .badge.platinum { background: #ece6f8; color: #4c3d86; }
+    button.guest-name-btn {
+      background: none;
+      color: var(--navy);
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      margin: 0;
+      font-family: inherit;
+      font-size: inherit;
+      font-weight: 700;
+      text-align: left;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .package-detail td { background: var(--ice); }
+    .package-panel { padding: 0.2rem 0.15rem 0.45rem; max-width: 420px; }
+    .package-panel h4 { margin: 0 0 0.15rem; font-size: 1rem; color: var(--navy-deep); }
+    .package-panel p { margin: 0.2rem 0; }
+    .pkg-status { font-weight: 700; margin-top: 0.55rem !important; }
+    .pkg-status.complete { color: var(--success); }
+    .pkg-status.incomplete { color: var(--navy-deep); }
+    .item-line { display: flex; align-items: center; gap: 0.55rem; padding: 0.28rem 0; }
+    .item-line input { width: 1.15rem; height: 1.15rem; }
+    .pkg-save { font-size: 0.8rem; margin-left: 0.35rem; }
+    .pkg-save.ok { color: var(--success); }
+    .pkg-save.err { color: #b42318; }
+    a.manage-link {
+      display: inline-block;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      background: #fff;
+      color: var(--navy);
+      border: 1.5px solid var(--navy);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    a.manage-link:hover { background: var(--ice); }
     .field select,
     .modal select {
       padding: 0.6rem 0.8rem;
@@ -635,9 +676,6 @@
         <label for="newPackage">Package</label>
         <select id="newPackage">
           <option value="">Select a package</option>
-          <option value="silver">Silver — M800</option>
-          <option value="gold">Gold — M1,100</option>
-          <option value="platinum">Platinum — M1,300</option>
         </select>
       </div>
       <button onclick="addAttendee()">Add guest</button>
@@ -653,6 +691,14 @@
         Import Excel spreadsheet
       </button>
       <p id="importStatus"></p>
+    </div>
+
+    <div class="import-row">
+      <div class="import-hint">
+        <strong>Packages</strong>
+        Add packages and the items handed out with each one.
+      </div>
+      <a class="manage-link" href="package.html">Manage packages</a>
     </div>
 
     <div class="toolbar">
@@ -724,9 +770,6 @@
       <input id="editName" type="text" placeholder="Full name">
       <select id="editPackage">
         <option value="">No package yet</option>
-        <option value="silver">Silver — M800</option>
-        <option value="gold">Gold — M1,100</option>
-        <option value="platinum">Platinum — M1,300</option>
       </select>
       <input id="editPassword" type="password" placeholder="Admin password"
         onkeydown="if(event.key==='Enter')submitEditGuest();if(event.key==='Escape')closeEditModal();">
@@ -764,6 +807,9 @@
     let pendingDelete = null;
     let selectedIds = new Set();
     let visibleIds = [];
+    let packageOptions = [];
+    let expandedIds = new Set();
+    let distributionCache = new Map();
 
     function getAuthHeaders() {
       const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
@@ -809,10 +855,14 @@
       return chosen ? chosen.value : '';
     }
 
-    function packageBadge(pkg) {
+    function packageBadge(guest) {
+      const pkg = guest && typeof guest === 'object' ? guest.package : guest;
+      const name = guest && typeof guest === 'object' ? guest.package_name : null;
       const labels = { silver: 'Silver', gold: 'Gold', platinum: 'Platinum' };
-      if (!labels[pkg]) return '—';
-      return `<span class="badge ${pkg}">${labels[pkg]}</span>`;
+      const label = name || labels[pkg];
+      if (!label) return '—';
+      const cls = labels[pkg] && (!name || name === labels[pkg]) ? pkg : 'yes';
+      return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
     }
 
     function openBulkConfirm(type) {
@@ -843,7 +893,7 @@
       document.getElementById('loginScreen').style.display = 'none';
       document.getElementById('adminContent').style.display = 'block';
       setupQr();
-      loadConferenceSettings().then(loadGuests);
+      loadConferenceSettings().then(() => Promise.all([loadGuests(), loadPackages()]));
     }
 
     function setupQr() {
@@ -987,7 +1037,7 @@
           <td class="check-col">
             <input type="checkbox" class="row-check" data-id="${g.id}" ${selected ? 'checked' : ''} aria-label="Select ${escapeHtml(g.name)}">
           </td>
-          <td>${escapeHtml(g.name)}</td>
+          <td><button type="button" class="guest-name-btn" data-action="expand" data-id="${g.id}">${escapeHtml(g.name)}</button></td>
           <td><span class="badge yes">Confirmed</span></td>
           <td>
             <span class="badge ${g.checked_in ? 'yes' : 'no'}">
@@ -996,7 +1046,7 @@
           </td>
           <td>${escapeHtml(formatTime(g.checked_in_at))}</td>
           <td>${escapeHtml(methodLabel(g.check_in_method))}</td>
-          <td>${packageBadge(g.package)}</td>
+          <td>${packageBadge(g)}</td>
           <td class="actions-cell">
             ${g.checked_in
               ? `<button type="button" class="action-btn secondary" data-action="checkout" data-id="${g.id}">Check out</button>`
@@ -1005,9 +1055,68 @@
             <button type="button" class="action-btn danger" data-action="delete" data-id="${g.id}">Delete</button>
           </td>
         </tr>
+        ${detailRow(g)}
       `;
       }).join('');
       updateBulkBar();
+    }
+
+    function packageStatusText(data) {
+      const total = data.total || 0;
+      const got = data.receivedCount || 0;
+      if (total > 0 && data.complete) {
+        return `✓ Package Complete — All ${total} item${total === 1 ? '' : 's'} received`;
+      }
+      return `Package Incomplete — ${got} of ${total} items received`;
+    }
+
+    function detailRow(guest) {
+      if (!expandedIds.has(guest.id)) return '';
+      const data = distributionCache.get(guest.id);
+      if (!data) {
+        return `<tr class="package-detail"><td colspan="8"><div class="package-panel">Loading package…</div></td></tr>`;
+      }
+      if (data.error) {
+        return `<tr class="package-detail"><td colspan="8"><div class="package-panel">${escapeHtml(data.error)}</div></td></tr>`;
+      }
+      if (!data.packageId) {
+        return `<tr class="package-detail"><td colspan="8"><div class="package-panel"><h4>${escapeHtml(data.guestName || guest.name)}</h4><p>No package is assigned yet. Use Edit to assign one.</p></div></td></tr>`;
+      }
+      const items = (data.items || []).map((item) => `
+        <label class="item-line">
+          <input type="checkbox" class="item-received" data-guest="${guest.id}" data-item="${item.id}" ${item.received ? 'checked' : ''}>
+          <span>${escapeHtml(item.name)}</span>
+        </label>
+      `).join('');
+      const statusClass = data.complete ? 'complete' : 'incomplete';
+      return `<tr class="package-detail"><td colspan="8"><div class="package-panel">
+        <h4>${escapeHtml(data.guestName || guest.name)}</h4>
+        <p>Selected package: <strong>${escapeHtml(data.packageName || '')}</strong></p>
+        ${items || '<p>This package has no items yet.</p>'}
+        <p class="pkg-status ${statusClass}" id="pkgStatus-${guest.id}">${escapeHtml(packageStatusText(data))}</p>
+        <span class="pkg-save" id="pkgSave-${guest.id}"></span>
+      </div></td></tr>`;
+    }
+
+    async function loadDistribution(guestId) {
+      try {
+        const res = await fetch('/api/admin/guests/' + guestId + '/distribution', { headers: getAuthHeaders() });
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not load this package.');
+        distributionCache.set(guestId, data);
+      } catch (err) {
+        distributionCache.set(guestId, { error: err.message || 'Could not load this package.' });
+      }
+      renderGuestList();
+    }
+
+    function noteDistributionSave(guestId, ok, message) {
+      const el = document.getElementById('pkgSave-' + guestId);
+      if (!el) return;
+      el.className = 'pkg-save ' + (ok ? 'ok' : 'err');
+      el.textContent = message;
+      if (ok) setTimeout(() => { if (el.textContent === message) el.textContent = ''; }, 2000);
     }
 
     document.getElementById('searchGuests')?.addEventListener('input', renderGuestList);
@@ -1030,7 +1139,37 @@
       renderGuestList();
     });
 
-    document.getElementById('guestList')?.parentElement?.addEventListener('change', (e) => {
+    document.getElementById('guestList')?.parentElement?.addEventListener('change', async (e) => {
+      const itemCb = e.target.closest('input.item-received');
+      if (itemCb) {
+        const guestId = parseInt(itemCb.dataset.guest, 10);
+        const itemId = parseInt(itemCb.dataset.item, 10);
+        const received = itemCb.checked;
+        itemCb.disabled = true;
+        try {
+          const res = await fetch('/api/admin/guests/' + guestId + '/items/' + itemId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ received })
+          });
+          if (res.status === 401) { showLogin(); return; }
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not save.');
+          distributionCache.set(guestId, data.distribution);
+          const status = document.getElementById('pkgStatus-' + guestId);
+          if (status && data.distribution) {
+            status.textContent = packageStatusText(data.distribution);
+            status.className = 'pkg-status ' + (data.distribution.complete ? 'complete' : 'incomplete');
+          }
+          noteDistributionSave(guestId, true, 'Saved');
+        } catch (err) {
+          itemCb.checked = !received;
+          noteDistributionSave(guestId, false, err.message || 'Could not save');
+        } finally {
+          itemCb.disabled = false;
+        }
+        return;
+      }
       const cb = e.target.closest('input.row-check');
       if (!cb) return;
       const id = parseInt(cb.dataset.id, 10);
@@ -1048,6 +1187,16 @@
       const guest = allGuests.find((g) => g.id === id);
       if (!guest) return;
       const action = btn.dataset.action;
+
+      if (action === 'expand') {
+        if (expandedIds.has(id)) expandedIds.delete(id);
+        else {
+          expandedIds.add(id);
+          if (!distributionCache.has(id)) loadDistribution(id);
+        }
+        renderGuestList();
+        return;
+      }
 
       if (action === 'checkin') {
         pendingConfirm = { type: 'checkin', guestId: id, guestName: guest.name };
@@ -1077,7 +1226,8 @@
       if (action === 'edit') {
         pendingEdit = { guestId: id };
         document.getElementById('editName').value = guest.name || '';
-        document.getElementById('editPackage').value = guest.package || '';
+        ensureCurrentPackageOption(guest);
+        document.getElementById('editPackage').value = guest.package_id ? String(guest.package_id) : '';
         document.getElementById('editPassword').value = '';
         document.getElementById('editError').style.display = 'none';
         document.getElementById('editModal').classList.remove('hidden');
@@ -1426,6 +1576,41 @@
 
     document.getElementById('confStart')?.addEventListener('input', updateConferenceDuration);
     document.getElementById('confEnd')?.addEventListener('input', updateConferenceDuration);
+
+    function packageOptionLabel(pkg) {
+      return pkg.name + (pkg.price ? ' — ' + pkg.price : '');
+    }
+
+    function fillPackageSelect(select, placeholder) {
+      const current = select.value;
+      select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` +
+        packageOptions.map((pkg) => `<option value="${pkg.id}">${escapeHtml(packageOptionLabel(pkg))}</option>`).join('');
+      select.value = current;
+    }
+
+    function ensureCurrentPackageOption(guest) {
+      const select = document.getElementById('editPackage');
+      fillPackageSelect(select, 'No package yet');
+      if (guest.package_id && !packageOptions.some((pkg) => pkg.id === guest.package_id)) {
+        const opt = document.createElement('option');
+        opt.value = String(guest.package_id);
+        opt.textContent = (guest.package_name || 'Current package') + ' (removed)';
+        select.appendChild(opt);
+      }
+    }
+
+    async function loadPackages() {
+      try {
+        const res = await fetch('/api/admin/packages', { headers: getAuthHeaders() });
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        packageOptions = data.packages || [];
+        fillPackageSelect(document.getElementById('newPackage'), 'Select a package');
+        fillPackageSelect(document.getElementById('editPackage'), 'No package yet');
+      } catch {
+        /* Guest package menus stay on their placeholder if this fails. */
+      }
+    }
 
     if (sessionStorage.getItem(ADMIN_TOKEN_KEY)) {
       showAdmin();

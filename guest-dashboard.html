@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <script>try{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Your package | Sip &amp; Paint</title>
+  <link rel="icon" href="assets/Sip%20%26%20Paint%20poster.jpeg" type="image/jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,560&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="theme.css?v=2">
+  <style>
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 1.15rem 2rem;
+    }
+    .shell { width: 100%; max-width: 460px; }
+    .card {
+      background: rgba(255, 250, 246, 0.95);
+      border-radius: 28px;
+      box-shadow: 0 18px 50px var(--shadow);
+      padding: 1.6rem 1.35rem 1.3rem;
+      border: 1px solid rgba(255,255,255,0.8);
+    }
+    .eyebrow {
+      text-align: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--coral-deep);
+      margin: 0 0 0.35rem;
+    }
+    h1 {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 1.7rem;
+      text-align: center;
+      margin: 0 0 0.35rem;
+      color: var(--navy-deep);
+    }
+    .package-name { text-align: center; margin: 0 0 1rem; color: var(--ink); }
+    .items { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.45rem; }
+    .items li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      min-height: 48px;
+      padding: 0.7rem 0.85rem;
+      border-radius: 14px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+    .items .mark { font-weight: 800; width: 1.2rem; }
+    .items .received { color: var(--success); }
+    .items .waiting { color: var(--muted); }
+    .items .label { flex: 1; font-weight: 650; }
+    .progress, .package-status { margin: 0.85rem 0 0; font-weight: 700; }
+    .package-status.complete { color: var(--success); }
+    .package-status.incomplete { color: var(--navy-deep); }
+    .back { margin-top: 1.1rem; text-align: center; }
+    .back a { color: var(--navy); font-weight: 700; text-decoration: none; }
+    html[data-theme="dark"] .card { background: #241811; border-color: #4a382f; }
+    html[data-theme="dark"] .items li { background: #2a211c; border-color: #4a382f; }
+    @media (max-width: 480px) { body { padding-top: 3.6rem; } }
+  </style>
+</head>
+<body>
+  <button type="button" id="themeToggle" class="theme-toggle" aria-label="Switch to dark mode" aria-pressed="false"></button>
+  <div class="shell">
+    <div class="card">
+      <p class="eyebrow">Your dashboard</p>
+      <h1 id="welcome">Loading your package…</h1>
+      <p class="package-name" id="packageName"></p>
+      <ul class="items" id="items"></ul>
+      <p class="progress" id="progress"></p>
+      <p class="package-status" id="packageStatus"></p>
+      <p class="back"><a href="index.html">← Back to check-in</a></p>
+    </div>
+    <footer class="site-credit">Designed &amp; Developed by Kutlo Molisana</footer>
+  </div>
+  <script src="theme.js"></script>
+  <script>
+    const TOKEN_KEY = 'guest_dashboard_token';
+    const token = sessionStorage.getItem(TOKEN_KEY);
+    if (!token) window.location.replace('guest-verify.html');
+
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
+
+    function leave(reason) {
+      sessionStorage.removeItem(TOKEN_KEY);
+      window.location.replace('guest-verify.html?reason=' + reason);
+    }
+
+    function render(data) {
+      const total = data.total || 0;
+      const got = data.receivedCount || 0;
+      document.getElementById('welcome').textContent = 'Welcome, ' + (data.name || 'guest') + '!';
+      document.getElementById('packageName').textContent = data.packageName
+        ? 'Your Package: ' + data.packageName
+        : 'No package is assigned to this booking yet.';
+      const items = data.items || [];
+      document.getElementById('items').innerHTML = items.length
+        ? items.map((item) => `
+            <li class="${item.received ? 'received' : 'waiting'}">
+              <span class="mark" aria-hidden="true">${item.received ? '✓' : '○'}</span>
+              <span class="label">${escapeHtml(item.name)}</span>
+              <span>${item.received ? 'Received' : 'Not Received'}</span>
+            </li>
+          `).join('')
+        : '<li class="waiting"><span class="label">This package has no items yet.</span></li>';
+      document.getElementById('progress').textContent = 'Package Progress: ' + got + ' of ' + total + ' items received';
+      const status = document.getElementById('packageStatus');
+      if (total > 0 && data.complete) {
+        status.className = 'package-status complete';
+        status.textContent = "✓ Package Complete — You've received all items in your package!";
+      } else {
+        status.className = 'package-status incomplete';
+        status.textContent = 'Package Status: Incomplete';
+      }
+    }
+
+    async function refresh() {
+      if (!sessionStorage.getItem(TOKEN_KEY)) return;
+      try {
+        const res = await fetch('/api/guest-dashboard', {
+          headers: { 'X-Guest-Token': sessionStorage.getItem(TOKEN_KEY) }
+        });
+        const data = await res.json();
+        if (res.status === 401) { leave('session'); return; }
+        if (res.status === 403) { leave('revoked'); return; }
+        if (!res.ok) return;
+        render(data);
+      } catch {
+        /* Keep the last successful view if a refresh fails. */
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refresh();
+    });
+  </script>
+</body>
+</html>

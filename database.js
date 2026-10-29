@@ -177,6 +177,7 @@ function initDatabase() {
   addColumn('check_in_method', 'check_in_method TEXT');
   addColumn('graduating', 'graduating INTEGER');
   addColumn('package', 'package TEXT');
+  addColumn('package_id', 'package_id INTEGER');
 
   // Unique email (case-insensitive) — only for rows that have an email
   db.exec(`
@@ -208,7 +209,64 @@ function initDatabase() {
 
   ensureAttendanceTable(db);
   migrateLegacyAttendance(db);
+  ensurePackageTables(db);
   db.close();
+}
+
+function ensurePackageTables(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS packages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      price TEXT,
+      legacy_key TEXT,
+      sort_order INTEGER DEFAULT 0,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS package_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      package_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (package_id) REFERENCES packages(id)
+    );
+    CREATE TABLE IF NOT EXISTS guest_item_receipts (
+      guest_id INTEGER NOT NULL,
+      item_id INTEGER NOT NULL,
+      received INTEGER NOT NULL DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (guest_id, item_id),
+      FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES package_items(id)
+    );
+  `);
+
+  const count = db.prepare('SELECT COUNT(*) AS n FROM packages').get().n;
+  if (count === 0) {
+    const seed = db.prepare(
+      'INSERT INTO packages (name, price, legacy_key, sort_order, active) VALUES (?, ?, ?, ?, 1)'
+    );
+    seed.run('Silver', 'M800', 'silver', 1);
+    seed.run('Gold', 'M1,100', 'gold', 2);
+    seed.run('Platinum', 'M1,300', 'platinum', 3);
+  }
+
+  db.prepare(`
+    UPDATE guests
+    SET package_id = (
+      SELECT id FROM packages
+      WHERE packages.legacy_key = guests.package
+         OR LOWER(packages.name) = LOWER(guests.package)
+      ORDER BY packages.active DESC, packages.id ASC
+      LIMIT 1
+    )
+    WHERE package_id IS NULL
+      AND package IS NOT NULL
+      AND TRIM(package) != ''
+  `).run();
 }
 
 function ensureAttendanceTable(db) {
@@ -379,8 +437,35 @@ function mapGuest(row) {
     check_in_method: row.check_in_method || null,
     graduating: row.graduating == null ? null : row.graduating === 1,
     package: row.package || null,
+    package_id: row.package_id || null,
     created_at: row.created_at || null
   };
+}
+
+function withPackageNames(guests) {
+  const list = (Array.isArray(guests) ? guests : [guests]).filter(Boolean);
+  if (!list.length) return guests;
+  const db = getDb();
+  const pkgs = db.prepare('SELECT id, name, price, legacy_key FROM packages').all();
+  db.close();
+  const byId = new Map(pkgs.map((pkg) => [pkg.id, pkg]));
+  const byKey = new Map(pkgs.filter((pkg) => pkg.legacy_key).map((pkg) => [pkg.legacy_key, pkg]));
+  const byName = new Map(pkgs.map((pkg) => [String(pkg.name).toLowerCase(), pkg]));
+  for (const guest of list) {
+    const pkg = (guest.package_id && byId.get(guest.package_id))
+      || (guest.package && byKey.get(guest.package))
+      || (guest.package && byName.get(String(guest.package).toLowerCase()))
+      || null;
+    if (pkg) {
+      guest.package_id = pkg.id;
+      guest.package_name = pkg.name;
+      guest.package_price = pkg.price || null;
+    } else {
+      guest.package_name = null;
+      guest.package_price = null;
+    }
+  }
+  return guests;
 }
 
 function findGuestByEmail(email) {
@@ -390,14 +475,14 @@ function findGuestByEmail(email) {
   const stmt = db.prepare(`
     SELECT id, name, email, table_number,
            COALESCE(seated, 0) AS seated,
-           checked_in_at, check_in_method, graduating, package, created_at
+           checked_in_at, check_in_method, graduating, package, package_id, created_at
     FROM guests
     WHERE email IS NOT NULL
       AND LOWER(TRIM(email)) = ?
   `);
   const guest = stmt.get(normalized);
   db.close();
-  return mapGuest(guest);
+  return withPackageNames(mapGuest(guest));
 }
 
 function findGuestByName(name) {
@@ -405,13 +490,45 @@ function findGuestByName(name) {
   const stmt = db.prepare(`
     SELECT id, name, email, table_number,
            COALESCE(seated, 0) AS seated,
-           checked_in_at, check_in_method, graduating, package, created_at
+           checked_in_at, check_in_method, graduating, package, package_id, created_at
     FROM guests
     WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
   `);
   const guest = stmt.get(name?.trim() || '');
   db.close();
-  return mapGuest(guest);
+  return withPackageNames(mapGuest(guest));
+}
+
+function findGuestsByExactName(name) {
+  const trimmed = (name || '').trim();
+  if (!trimmed) return [];
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT id, name, email, table_number,
+           COALESCE(seated, 0) AS seated,
+           checked_in_at, check_in_method, graduating, package, package_id, created_at
+    FROM guests
+    WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+    ORDER BY id
+  `).all(trimmed);
+  db.close();
+  return withPackageNames(rows.map(mapGuest));
+}
+
+function guestIsCheckedInForEvent(guestId) {
+  const state = currentConference();
+  if (!guestId || !state.configured || state.phase === 'before' || !state.days.length) return false;
+  const dates = state.phase === 'during' && state.currentDate
+    ? [state.currentDate]
+    : state.days.map((day) => day.date);
+  if (!dates.length) return false;
+  const db = getDb();
+  const placeholders = dates.map(() => '?').join(', ');
+  const row = db.prepare(
+    `SELECT 1 AS ok FROM attendance WHERE guest_id = ? AND attendance_date IN (${placeholders}) LIMIT 1`
+  ).get(guestId, ...dates);
+  db.close();
+  return !!row;
 }
 
 function findGuestById(id) {
@@ -419,13 +536,13 @@ function findGuestById(id) {
   const stmt = db.prepare(`
     SELECT id, name, email, table_number,
            COALESCE(seated, 0) AS seated,
-           checked_in_at, check_in_method, graduating, package, created_at
+           checked_in_at, check_in_method, graduating, package, package_id, created_at
     FROM guests
     WHERE id = ?
   `);
   const guest = stmt.get(id);
   db.close();
-  return mapGuest(guest);
+  return withPackageNames(mapGuest(guest));
 }
 
 /**
@@ -437,7 +554,7 @@ function loadGuestRow(db, id) {
   return db.prepare(`
     SELECT id, name, email, table_number,
            COALESCE(seated, 0) AS seated,
-           checked_in_at, check_in_method, graduating, package, created_at
+           checked_in_at, check_in_method, graduating, package, package_id, created_at
     FROM guests
     WHERE id = ?
   `).get(id);
@@ -505,7 +622,7 @@ function checkInGuest(id, method, guestPackage, attendanceDate) {
   return {
     ok: !already,
     alreadyCheckedIn: already,
-    guest,
+    guest: withPackageNames(guest),
     attendanceDate: date,
     state
   };
@@ -560,7 +677,7 @@ function updateGuestTable(id, tableNumber) {
 
 function updateGuest(id, { name, email, package: guestPackage } = {}) {
   const db = getDb();
-  const current = db.prepare('SELECT id, name, email, package FROM guests WHERE id = ?').get(id);
+  const current = db.prepare('SELECT id, name, email, package, package_id FROM guests WHERE id = ?').get(id);
   if (!current) {
     db.close();
     return false;
@@ -568,15 +685,19 @@ function updateGuest(id, { name, email, package: guestPackage } = {}) {
   const newName = name != null ? String(name).trim() : current.name;
   const newEmail = email != null ? normalizeEmail(email) : current.email;
   let newPackage = current.package || null;
+  let newPackageId = current.package_id || null;
   if (guestPackage !== undefined) {
     if (guestPackage == null || String(guestPackage).trim() === '') {
       newPackage = null;
+      newPackageId = null;
     } else {
-      newPackage = normalizePackage(guestPackage);
-      if (!newPackage) {
+      const resolved = resolvePackage(db, guestPackage);
+      if (!resolved) {
         db.close();
         throw new Error('BAD_PACKAGE');
       }
+      newPackage = storedPackageValue(resolved);
+      newPackageId = resolved.id;
     }
   }
   if (!newName) {
@@ -584,8 +705,8 @@ function updateGuest(id, { name, email, package: guestPackage } = {}) {
     return false;
   }
   try {
-    const stmt = db.prepare('UPDATE guests SET name = ?, email = ?, package = ? WHERE id = ?');
-    const result = stmt.run(newName, newEmail || null, newPackage, id);
+    const stmt = db.prepare('UPDATE guests SET name = ?, email = ?, package = ?, package_id = ? WHERE id = ?');
+    const result = stmt.run(newName, newEmail || null, newPackage, newPackageId, id);
     db.close();
     return result.changes > 0;
   } catch (err) {
@@ -685,7 +806,7 @@ function searchGuests(query) {
   const stmt = db.prepare(`
     SELECT id, name, email, table_number,
            COALESCE(seated, 0) AS seated,
-           checked_in_at, check_in_method, graduating, package, created_at
+           checked_in_at, check_in_method, graduating, package, package_id, created_at
     FROM guests
     WHERE LOWER(name) LIKE LOWER(?)
        OR (email IS NOT NULL AND LOWER(email) LIKE LOWER(?))
@@ -729,16 +850,22 @@ function addGuest(name, tableNumber, email, guestPackage) {
     throw new Error('AT_CAPACITY');
   }
   const normalizedEmail = normalizeEmail(email);
-  const pkg = normalizePackage(guestPackage);
+  const resolved = resolvePackage(db, guestPackage);
+  if (!resolved) {
+    db.close();
+    throw new Error('BAD_PACKAGE');
+  }
+  const stored = storedPackageValue(resolved);
   try {
     const stmt = db.prepare(
-      'INSERT INTO guests (name, table_number, email, package) VALUES (?, ?, ?, ?)'
+      'INSERT INTO guests (name, table_number, email, package, package_id) VALUES (?, ?, ?, ?, ?)'
     );
     const result = stmt.run(
       name?.trim(),
       parseInt(tableNumber, 10) || 0,
       normalizedEmail || null,
-      pkg
+      stored,
+      resolved.id
     );
     db.close();
     return {
@@ -746,7 +873,9 @@ function addGuest(name, tableNumber, email, guestPackage) {
       name: name?.trim(),
       table_number: parseInt(tableNumber, 10) || 0,
       email: normalizedEmail || null,
-      package: pkg,
+      package: stored,
+      package_id: resolved.id,
+      package_name: resolved.name,
       checked_in: false
     };
   } catch (err) {
@@ -769,7 +898,7 @@ function importGuests(entries) {
     'SELECT id FROM guests WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))'
   );
   const insert = db.prepare(
-    'INSERT INTO guests (name, table_number, email, package) VALUES (?, 0, ?, ?)'
+    'INSERT INTO guests (name, table_number, email, package, package_id) VALUES (?, 0, ?, ?, ?)'
   );
   let booked = db.prepare('SELECT COUNT(*) AS count FROM guests').get().count;
 
@@ -794,9 +923,14 @@ function importGuests(entries) {
         continue;
       }
       const email = normalizeEmail(row.email) || null;
-      const pkg = normalizePackage(row.package);
+      const resolved = row.package ? resolvePackage(db, row.package) : null;
       try {
-        insert.run(name, email, pkg);
+        insert.run(
+          name,
+          email,
+          resolved ? storedPackageValue(resolved) : null,
+          resolved ? resolved.id : null
+        );
         imported++;
         booked++;
       } catch (err) {
@@ -821,7 +955,7 @@ function getAllGuests(attendanceDate) {
   const rows = db.prepare(`
     SELECT id, name, email, table_number,
            COALESCE(seated, 0) AS seated,
-           checked_in_at, check_in_method, graduating, package, created_at
+           checked_in_at, check_in_method, graduating, package, package_id, created_at
     FROM guests
     ORDER BY name
   `).all();
@@ -834,7 +968,7 @@ function getAllGuests(attendanceDate) {
     : [];
   db.close();
   const byGuest = new Map(records.map((row) => [row.guest_id, row]));
-  return rows.map((row) => guestForDate(row, byGuest.get(row.id) || null));
+  return withPackageNames(rows.map((row) => guestForDate(row, byGuest.get(row.id) || null)));
 }
 
 function getGuestCount() {
@@ -868,15 +1002,251 @@ function getAttendanceStats(attendanceDate) {
   };
 }
 
+function resolvePackage(db, value) {
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) {
+    const byId = db.prepare('SELECT * FROM packages WHERE id = ? AND active = 1').get(parseInt(text, 10));
+    if (byId) return byId;
+  }
+  const legacy = normalizePackage(text);
+  if (legacy) {
+    const byKey = db.prepare('SELECT * FROM packages WHERE legacy_key = ? AND active = 1').get(legacy);
+    if (byKey) return byKey;
+  }
+  return db.prepare('SELECT * FROM packages WHERE active = 1 AND LOWER(name) = LOWER(?)').get(text) || null;
+}
+
+function storedPackageValue(pkg) {
+  return pkg.legacy_key || pkg.name;
+}
+
+function listPackages({ activeOnly = false, withItems = false } = {}) {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT id, name, price, legacy_key, sort_order, active
+    FROM packages
+    ${activeOnly ? 'WHERE active = 1' : ''}
+    ORDER BY sort_order, id
+  `).all();
+  const items = withItems
+    ? db.prepare(`
+        SELECT id, package_id, name, sort_order
+        FROM package_items
+        WHERE active = 1
+        ORDER BY sort_order, id
+      `).all()
+    : [];
+  db.close();
+  const byPackage = new Map();
+  for (const item of items) {
+    if (!byPackage.has(item.package_id)) byPackage.set(item.package_id, []);
+    byPackage.get(item.package_id).push({ id: item.id, name: item.name, sort_order: item.sort_order });
+  }
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    price: row.price || null,
+    legacy_key: row.legacy_key || null,
+    sort_order: row.sort_order || 0,
+    active: row.active !== 0,
+    items: byPackage.get(row.id) || []
+  }));
+}
+
+function createPackage(name, price) {
+  const clean = String(name || '').trim();
+  if (!clean || clean.length > 80) throw new Error('BAD_NAME');
+  const db = getDb();
+  const dup = db.prepare('SELECT id FROM packages WHERE active = 1 AND LOWER(name) = LOWER(?)').get(clean);
+  if (dup) {
+    db.close();
+    throw new Error('DUPLICATE');
+  }
+  const order = db.prepare('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM packages').get().n;
+  const priceText = price != null && String(price).trim() ? String(price).trim().slice(0, 40) : null;
+  const result = db.prepare(
+    'INSERT INTO packages (name, price, sort_order, active) VALUES (?, ?, ?, 1)'
+  ).run(clean, priceText, order);
+  const id = result.lastInsertRowid;
+  db.close();
+  return listPackages({ withItems: true }).find((pkg) => pkg.id === id);
+}
+
+function updatePackage(id, { name, price } = {}) {
+  const clean = String(name || '').trim();
+  if (!clean || clean.length > 80) throw new Error('BAD_NAME');
+  const db = getDb();
+  const current = db.prepare('SELECT * FROM packages WHERE id = ? AND active = 1').get(id);
+  if (!current) {
+    db.close();
+    throw new Error('NOT_FOUND');
+  }
+  const dup = db.prepare(
+    'SELECT id FROM packages WHERE active = 1 AND LOWER(name) = LOWER(?) AND id != ?'
+  ).get(clean, id);
+  if (dup) {
+    db.close();
+    throw new Error('DUPLICATE');
+  }
+  const priceText = price === undefined
+    ? current.price
+    : (price != null && String(price).trim() ? String(price).trim().slice(0, 40) : null);
+  db.prepare('UPDATE packages SET name = ?, price = ? WHERE id = ?').run(clean, priceText, id);
+  if (!current.legacy_key) {
+    db.prepare('UPDATE guests SET package = ? WHERE package_id = ?').run(clean, id);
+  }
+  db.close();
+  return listPackages({ withItems: true }).find((pkg) => pkg.id === id);
+}
+
+function deactivatePackage(id) {
+  const db = getDb();
+  const result = db.prepare('UPDATE packages SET active = 0 WHERE id = ? AND active = 1').run(id);
+  db.close();
+  return result.changes > 0;
+}
+
+function addPackageItem(packageId, name) {
+  const clean = String(name || '').trim();
+  if (!clean || clean.length > 80) throw new Error('BAD_NAME');
+  const db = getDb();
+  const pkg = db.prepare('SELECT id FROM packages WHERE id = ? AND active = 1').get(packageId);
+  if (!pkg) {
+    db.close();
+    throw new Error('NOT_FOUND');
+  }
+  const dup = db.prepare(
+    'SELECT id FROM package_items WHERE package_id = ? AND active = 1 AND LOWER(name) = LOWER(?)'
+  ).get(packageId, clean);
+  if (dup) {
+    db.close();
+    throw new Error('DUPLICATE');
+  }
+  const order = db.prepare(
+    'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM package_items WHERE package_id = ?'
+  ).get(packageId).n;
+  const result = db.prepare(
+    'INSERT INTO package_items (package_id, name, sort_order, active) VALUES (?, ?, ?, 1)'
+  ).run(packageId, clean, order);
+  const item = { id: result.lastInsertRowid, name: clean, sort_order: order };
+  db.close();
+  return item;
+}
+
+function renamePackageItem(itemId, name) {
+  const clean = String(name || '').trim();
+  if (!clean || clean.length > 80) throw new Error('BAD_NAME');
+  const db = getDb();
+  const current = db.prepare('SELECT * FROM package_items WHERE id = ? AND active = 1').get(itemId);
+  if (!current) {
+    db.close();
+    throw new Error('NOT_FOUND');
+  }
+  const dup = db.prepare(
+    'SELECT id FROM package_items WHERE package_id = ? AND active = 1 AND LOWER(name) = LOWER(?) AND id != ?'
+  ).get(current.package_id, clean, itemId);
+  if (dup) {
+    db.close();
+    throw new Error('DUPLICATE');
+  }
+  db.prepare('UPDATE package_items SET name = ? WHERE id = ?').run(clean, itemId);
+  db.close();
+  return { id: itemId, name: clean };
+}
+
+function deactivatePackageItem(itemId) {
+  const db = getDb();
+  const result = db.prepare('UPDATE package_items SET active = 0 WHERE id = ? AND active = 1').run(itemId);
+  db.close();
+  return result.changes > 0;
+}
+
+function getGuestDistribution(guestId) {
+  const db = getDb();
+  const guest = db.prepare('SELECT id, name, package, package_id FROM guests WHERE id = ?').get(guestId);
+  if (!guest) {
+    db.close();
+    return null;
+  }
+  let pkg = guest.package_id
+    ? db.prepare('SELECT id, name FROM packages WHERE id = ?').get(guest.package_id)
+    : null;
+  if (!pkg && guest.package) {
+    const legacy = normalizePackage(guest.package);
+    pkg = legacy
+      ? db.prepare('SELECT id, name FROM packages WHERE legacy_key = ? ORDER BY active DESC, id ASC').get(legacy)
+      : db.prepare('SELECT id, name FROM packages WHERE LOWER(name) = LOWER(?) ORDER BY active DESC, id ASC').get(guest.package);
+    if (pkg) db.prepare('UPDATE guests SET package_id = ? WHERE id = ? AND package_id IS NULL').run(pkg.id, guest.id);
+  }
+  const items = pkg
+    ? db.prepare(
+      'SELECT id, name FROM package_items WHERE package_id = ? AND active = 1 ORDER BY sort_order, id'
+    ).all(pkg.id)
+    : [];
+  const receipts = db.prepare(
+    'SELECT item_id, received FROM guest_item_receipts WHERE guest_id = ?'
+  ).all(guest.id);
+  db.close();
+  const received = new Map(receipts.map((row) => [row.item_id, row.received === 1]));
+  const merged = items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    received: !!received.get(item.id)
+  }));
+  const receivedCount = merged.filter((item) => item.received).length;
+  const total = merged.length;
+  return {
+    guestId: guest.id,
+    guestName: guest.name,
+    packageId: pkg ? pkg.id : null,
+    packageName: pkg ? pkg.name : null,
+    items: merged,
+    receivedCount,
+    total,
+    complete: total > 0 && receivedCount === total
+  };
+}
+
+function setGuestItemReceived(guestId, itemId, received) {
+  const db = getDb();
+  const guest = db.prepare('SELECT id, package_id FROM guests WHERE id = ?').get(guestId);
+  if (!guest) {
+    db.close();
+    throw new Error('NOT_FOUND');
+  }
+  const item = db.prepare('SELECT id, package_id, active FROM package_items WHERE id = ?').get(itemId);
+  if (!item || item.active !== 1) {
+    db.close();
+    throw new Error('NOT_FOUND');
+  }
+  if (!guest.package_id || item.package_id !== guest.package_id) {
+    db.close();
+    throw new Error('WRONG_PACKAGE');
+  }
+  db.prepare(`
+    INSERT INTO guest_item_receipts (guest_id, item_id, received, updated_at)
+    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(guest_id, item_id) DO UPDATE SET
+      received = excluded.received,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(guestId, itemId, received ? 1 : 0);
+  db.close();
+  return getGuestDistribution(guestId);
+}
+
 module.exports = {
   EVENT_CAPACITY,
   normalizePackage,
+  resolvePackage,
   getDb,
   initDatabase,
   normalizeEmail,
   firstNameFrom,
   findGuestByEmail,
   findGuestByName,
+  findGuestsByExactName,
+  guestIsCheckedInForEvent,
   findGuestById,
   checkInGuest,
   searchGuests,
@@ -897,6 +1267,15 @@ module.exports = {
   getConferenceSettings,
   saveConferenceSettings,
   currentConference,
+  listPackages,
+  createPackage,
+  updatePackage,
+  deactivatePackage,
+  addPackageItem,
+  renamePackageItem,
+  deactivatePackageItem,
+  getGuestDistribution,
+  setGuestItemReceived,
   findAttendance,
   checkOutGuest
 };

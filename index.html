@@ -142,6 +142,26 @@
     }
     .contacts a { color: var(--teal-deep); font-weight: 700; text-decoration: none; }
     .form-panel.hidden { display: none; }
+    a.dashboard-entry {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      margin-top: 0.9rem;
+      min-height: 52px;
+      padding: 0.75rem 1rem;
+      border-radius: 999px;
+      border: 1.5px solid var(--navy);
+      color: var(--navy);
+      background: transparent;
+      font-weight: 700;
+      font-size: 0.95rem;
+      line-height: 1.3;
+      text-decoration: none;
+      text-align: center;
+    }
+    a.dashboard-entry:hover { background: rgba(255, 255, 255, 0.55); }
+    html[data-theme="dark"] a.dashboard-entry { color: #ffe8df; border-color: #ffe8df; }
     .admin-link { margin: 0.85rem 0 0; font-size: 0.88rem; }
     .admin-link a { color: var(--navy); font-weight: 700; text-decoration: none; }
     .admin-link a:hover { text-decoration: underline; }
@@ -216,6 +236,8 @@
           <button type="button" class="btn-primary" id="tryAgainBtn">Try again</button>
         </p>
       </div>
+
+      <a class="dashboard-entry" href="guest-verify.html">Already checked in? View your dashboard</a>
     </div>
   </div>
   <p class="admin-link"><a href="admin.html">Staff / Admin</a></p>

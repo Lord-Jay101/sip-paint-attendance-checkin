@@ -6,6 +6,8 @@ const XLSX = require('xlsx');
 const {
   initDatabase,
   findGuestByName,
+  findGuestsByExactName,
+  guestIsCheckedInForEvent,
   findGuestById,
   checkInGuest,
   firstNameFrom,
@@ -27,7 +29,16 @@ const {
   findAttendance,
   checkOutGuest,
   EVENT_CAPACITY,
-  normalizePackage
+  normalizePackage,
+  listPackages,
+  createPackage,
+  updatePackage,
+  deactivatePackage,
+  addPackageItem,
+  renamePackageItem,
+  deactivatePackageItem,
+  getGuestDistribution,
+  setGuestItemReceived
 } = require('./database');
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin2024';
@@ -95,10 +106,40 @@ function conferenceError(state) {
 
 const PACKAGE_NAMES = { silver: 'Silver', gold: 'Gold', platinum: 'Platinum' };
 
-function welcomeMessage(name, guestPackage) {
-  const label = PACKAGE_NAMES[guestPackage] || 'package';
-  const packageLabel = PACKAGE_NAMES[guestPackage] ? `${label} package` : 'package';
+function welcomeMessage(name, guestPackage, packageName) {
+  const known = PACKAGE_NAMES[guestPackage];
+  const unchangedLegacy = known && (!packageName || packageName === known);
+  const packageLabel = unchangedLegacy
+    ? `${known} package`
+    : (packageName || guestPackage || 'package');
   return `Welcome, ${name}.\n\nYour ${packageLabel} is waiting for you.\n\nEnjoy the event.`;
+}
+
+function guestHasBookedPackage(guest) {
+  return !!(guest && (guest.package_id || (guest.package && String(guest.package).trim())));
+}
+
+function packagesMatch(guest, chosen) {
+  const chosenText = String(chosen || '').trim();
+  if (!chosenText || !guest) return false;
+  const chosenId = /^\d+$/.test(chosenText) ? parseInt(chosenText, 10) : null;
+  if (chosenId && guest.package_id && chosenId === Number(guest.package_id)) return true;
+  const chosenKey = normalizePackage(chosenText);
+  const guestKey = normalizePackage(guest.package);
+  if (chosenKey && guestKey && chosenKey === guestKey) return true;
+  if (guest.package_name && chosenText.toLowerCase() === String(guest.package_name).toLowerCase()) return true;
+  if (guest.package && chosenText.toLowerCase() === String(guest.package).toLowerCase()) return true;
+  return false;
+}
+
+function sendPackageError(res, err, fallback) {
+  if (err && err.message === 'BAD_NAME') return res.status(400).json({ error: 'Enter a name (80 characters or fewer).' });
+  if (err && err.message === 'DUPLICATE') return res.status(409).json({ error: 'That name is already in use.' });
+  if (err && err.message === 'NOT_FOUND') return res.status(404).json({ error: 'Not found.' });
+  if (err && err.message === 'WRONG_PACKAGE') {
+    return res.status(400).json({ error: "That item is not part of this guest's package." });
+  }
+  return res.status(500).json({ error: fallback });
 }
 
 function formatCheckInTime(iso) {
@@ -131,9 +172,15 @@ app.get('/api/event', (req, res) => {
   try {
     const conference = currentConference();
     const stats = getAttendanceStats();
+    const livePackages = listPackages({ activeOnly: true }).map((pkg) => ({
+      id: pkg.id,
+      name: pkg.name,
+      price: pkg.price
+    }));
     res.json({
       name: EVENT_NAME,
       ...EVENT_DETAILS,
+      packages: livePackages.length ? livePackages : EVENT_DETAILS.packages,
       capacity: EVENT_CAPACITY,
       booked: stats.rsvp,
       spotsLeft: stats.spotsLeft,
@@ -231,7 +278,8 @@ app.post('/api/check-in', (req, res) => {
     }
 
     if (todayRecord) {
-      return res.json({
+      const requestedId = parseInt(req.body?.id, 10);
+      const payload = {
         status: 'already_checked_in',
         id: guest.id,
         name: guest.name,
@@ -239,8 +287,12 @@ app.post('/api/check-in', (req, res) => {
         package: guest.package,
         checkedInAt: todayRecord.checked_in_at,
         checkedInAtDisplay: formatCheckInTime(todayRecord.checked_in_at),
-        message: welcomeMessage(guest.name, guest.package)
-      });
+        message: welcomeMessage(guest.name, guest.package, guest.package_name)
+      };
+      if (requestedId === guest.id && guestIsCheckedInForEvent(guest.id)) {
+        payload.dashboardToken = issueGuestDashboardToken(guest.id);
+      }
+      return res.json(payload);
     }
 
     return res.json({
@@ -249,7 +301,7 @@ app.post('/api/check-in', (req, res) => {
       name: guest.name,
       firstName: firstNameFrom(guest.name),
       package: guest.package,
-      message: welcomeMessage(guest.name, guest.package)
+      message: welcomeMessage(guest.name, guest.package, guest.package_name)
     });
   } catch (err) {
     console.error('Check-in lookup error:', err.message);
@@ -284,22 +336,20 @@ app.post('/api/check-in/confirm', (req, res) => {
       });
     }
 
-    const guestPackage = normalizePackage(guest.package);
-    if (!guestPackage) {
+    if (!guestHasBookedPackage(guest)) {
       return res.status(400).json({
         status: 'error',
         error: 'This booking has no package yet. Please speak to the door team.'
       });
     }
 
-    const chosenPackage = normalizePackage(req.body?.package);
-    if (!chosenPackage) {
+    if (!String(req.body?.package || '').trim()) {
       return res.status(400).json({
         status: 'error',
         error: 'Please confirm the package you booked.'
       });
     }
-    if (chosenPackage !== guestPackage) {
+    if (!packagesMatch(guest, req.body.package)) {
       return res.status(400).json({
         status: 'error',
         error: 'That package does not match this booking. Please speak to the door team.'
@@ -314,6 +364,7 @@ app.post('/api/check-in/confirm', (req, res) => {
       });
     }
 
+    const guestPackage = guest.package;
     const result = checkInGuest(guest.id, 'self', guestPackage, conference.currentDate);
     if (!result.ok && !result.alreadyCheckedIn) {
       return res.status(500).json({
@@ -326,10 +377,11 @@ app.post('/api/check-in/confirm', (req, res) => {
       status: result.alreadyCheckedIn ? 'already_checked_in' : 'checked_in',
       name: result.guest.name,
       firstName: firstNameFrom(result.guest.name),
-      package: guestPackage,
+      package: result.guest.package_id || guestPackage,
       checkedInAt: result.guest.checked_in_at,
       checkedInAtDisplay: formatCheckInTime(result.guest.checked_in_at),
-      message: welcomeMessage(result.guest.name, guestPackage)
+      message: welcomeMessage(result.guest.name, result.guest.package || guestPackage, result.guest.package_name),
+      dashboardToken: issueGuestDashboardToken(result.guest.id)
     });
   } catch (err) {
     console.error('Check-in confirm error:', err.message);
@@ -397,12 +449,11 @@ app.post('/api/admin/check-in/:id', requireAdmin, (req, res) => {
     const guest = findGuestById(id);
     if (!guest) return res.status(404).json({ error: 'Attendee not found.' });
 
-    const guestPackage = normalizePackage(guest.package);
-    if (!guestPackage) {
+    if (!guestHasBookedPackage(guest)) {
       return res.status(400).json({ error: 'Assign a package on this booking before check-in.' });
     }
 
-    const result = checkInGuest(id, 'manual', guestPackage, req.body.attendance_date);
+    const result = checkInGuest(id, 'manual', guest.package, req.body.attendance_date);
     if (result.unavailable) {
       return res.status(400).json({ error: conferenceError(result.state) });
     }
@@ -571,7 +622,7 @@ app.patch('/api/guests/:id', requireAdmin, (req, res) => {
         return res.status(409).json({ error: 'That email is already on the guest list.' });
       }
       if (e.message === 'BAD_PACKAGE') {
-        return res.status(400).json({ error: 'Choose Silver, Gold, or Platinum.' });
+        return res.status(400).json({ error: 'Choose a package from the list.' });
       }
       throw e;
     }
@@ -607,7 +658,7 @@ app.post('/api/guests', requireAdmin, (req, res) => {
     if (email && !isValidEmail(email)) {
       return res.status(400).json({ error: 'Please enter a valid email address.' });
     }
-    if (!normalizePackage(guestPackage)) {
+    if (guestPackage == null || String(guestPackage).trim() === '') {
       return res.status(400).json({ error: 'Choose the package this guest paid for.' });
     }
     try {
@@ -619,6 +670,9 @@ app.post('/api/guests', requireAdmin, (req, res) => {
       }
       if (e.message === 'AT_CAPACITY') {
         return res.status(409).json({ error: 'Sip & Paint is limited to 50 guests.' });
+      }
+      if (e.message === 'BAD_PACKAGE') {
+        return res.status(400).json({ error: 'Choose the package this guest paid for.' });
       }
       throw e;
     }
@@ -697,6 +751,216 @@ app.post('/api/guests/import', requireAdmin, (req, res) => {
       res.status(500).json({ error: 'Could not read that spreadsheet. Please try again.' });
     }
   });
+});
+
+app.get('/api/packages', (req, res) => {
+  try {
+    const packages = listPackages({ activeOnly: true }).map((pkg) => ({
+      id: pkg.id,
+      name: pkg.name,
+      price: pkg.price
+    }));
+    res.json({ packages });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load packages.' });
+  }
+});
+
+app.get('/api/admin/packages', requireAdmin, (req, res) => {
+  try {
+    res.json({ packages: listPackages({ activeOnly: true, withItems: true }) });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load packages.' });
+  }
+});
+
+app.post('/api/admin/packages', requireAdmin, (req, res) => {
+  try {
+    const pkg = createPackage(req.body?.name, req.body?.price);
+    res.status(201).json({ success: true, package: pkg });
+  } catch (err) {
+    sendPackageError(res, err, 'Unable to add that package.');
+  }
+});
+
+app.patch('/api/admin/packages/:id', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid package.' });
+    const pkg = updatePackage(id, { name: req.body?.name, price: req.body?.price });
+    res.json({ success: true, package: pkg });
+  } catch (err) {
+    sendPackageError(res, err, 'Unable to update that package.');
+  }
+});
+
+app.delete('/api/admin/packages/:id', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid package.' });
+    const ok = deactivatePackage(id);
+    if (!ok) return res.status(404).json({ error: 'Package not found.' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to remove that package.' });
+  }
+});
+
+app.post('/api/admin/packages/:id/items', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid package.' });
+    const item = addPackageItem(id, req.body?.name);
+    res.status(201).json({ success: true, item });
+  } catch (err) {
+    sendPackageError(res, err, 'Unable to add that item.');
+  }
+});
+
+app.patch('/api/admin/package-items/:id', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid item.' });
+    const item = renamePackageItem(id, req.body?.name);
+    res.json({ success: true, item });
+  } catch (err) {
+    sendPackageError(res, err, 'Unable to update that item.');
+  }
+});
+
+app.delete('/api/admin/package-items/:id', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid item.' });
+    const ok = deactivatePackageItem(id);
+    if (!ok) return res.status(404).json({ error: 'Item not found.' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to remove that item.' });
+  }
+});
+
+app.get('/api/admin/guests/:id/distribution', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid guest.' });
+    const distribution = getGuestDistribution(id);
+    if (!distribution) return res.status(404).json({ error: 'Guest not found.' });
+    res.json(distribution);
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load this guest\'s package.' });
+  }
+});
+
+const guestDashboardSessions = new Map();
+const GUEST_DASHBOARD_SESSION_MS = 8 * 60 * 60 * 1000;
+
+function issueGuestDashboardToken(guestId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  guestDashboardSessions.set(token, {
+    guestId,
+    expires: Date.now() + GUEST_DASHBOARD_SESSION_MS
+  });
+  return token;
+}
+
+function requireGuestDashboard(req, res, next) {
+  const token = req.headers['x-guest-token'];
+  const session = token ? guestDashboardSessions.get(token) : null;
+  if (!session || Date.now() > session.expires) {
+    if (token) guestDashboardSessions.delete(token);
+    return res.status(401).json({
+      code: 'session',
+      error: 'Please verify your name again.'
+    });
+  }
+  if (!guestIsCheckedInForEvent(session.guestId)) {
+    guestDashboardSessions.delete(token);
+    return res.status(403).json({
+      code: 'revoked',
+      error: "You haven't checked in yet. Please complete your check-in before accessing your dashboard."
+    });
+  }
+  req.guestDashboardId = session.guestId;
+  next();
+}
+
+app.post('/api/guest-dashboard/verify', (req, res) => {
+  try {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (!name) return res.status(400).json({ error: 'Please enter your name.' });
+
+    const matches = findGuestsByExactName(name);
+    if (!matches.length) {
+      return res.status(404).json({
+        error: "We couldn't find your name in our guest records. Please check your spelling and try again."
+      });
+    }
+
+    const checkedIn = matches.filter((guest) => guestIsCheckedInForEvent(guest.id));
+    if (!checkedIn.length) {
+      return res.status(403).json({
+        error: "You haven't checked in yet. Please complete your check-in before accessing your dashboard."
+      });
+    }
+
+    if (!String(req.body?.package || '').trim()) {
+      return res.status(400).json({ error: 'Please confirm the package you booked.' });
+    }
+
+    const verified = checkedIn.filter((guest) => packagesMatch(guest, req.body.package));
+    if (!verified.length) {
+      return res.status(400).json({
+        error: 'That package does not match this booking. Please try again.'
+      });
+    }
+    if (verified.length > 1) {
+      return res.status(409).json({
+        error: 'We found more than one guest with these details. Please speak to the door team.'
+      });
+    }
+
+    res.json({ success: true, token: issueGuestDashboardToken(verified[0].id) });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to verify your booking. Please try again.' });
+  }
+});
+
+app.get('/api/guest-dashboard', requireGuestDashboard, (req, res) => {
+  try {
+    const distribution = getGuestDistribution(req.guestDashboardId);
+    if (!distribution) {
+      return res.status(401).json({ code: 'session', error: 'Please verify your name again.' });
+    }
+    res.json({
+      name: distribution.guestName,
+      packageName: distribution.packageName,
+      items: distribution.items.map((item) => ({
+        name: item.name,
+        received: !!item.received
+      })),
+      receivedCount: distribution.receivedCount,
+      total: distribution.total,
+      complete: distribution.complete
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Unable to load your package.' });
+  }
+});
+
+app.put('/api/admin/guests/:id/items/:itemId', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const itemId = parseInt(req.params.itemId, 10);
+    if (!id || !itemId) return res.status(400).json({ error: 'Invalid item.' });
+    if (typeof req.body?.received !== 'boolean') {
+      return res.status(400).json({ error: 'Say whether the item was received.' });
+    }
+    const distribution = setGuestItemReceived(id, itemId, req.body.received);
+    res.json({ success: true, distribution });
+  } catch (err) {
+    sendPackageError(res, err, 'Unable to save that item.');
+  }
 });
 
 const PORT = process.env.PORT || 3000;

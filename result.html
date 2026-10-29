@@ -104,6 +104,15 @@
       margin: 0;
       white-space: pre-line;
     }
+    a.dashboard-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1rem;
+      text-decoration: none;
+      line-height: 1.2;
+    }
+    a.dashboard-btn[hidden] { display: none; }
     .mark {
       width: 54px;
       height: 54px;
@@ -159,20 +168,7 @@
         <p class="sub">To be checked in, confirm the package that you booked.</p>
         <fieldset>
           <legend>Your package</legend>
-          <div class="choices">
-            <label class="choice">
-              <span><input type="radio" name="package" value="silver"> Silver</span>
-              <small>M800</small>
-            </label>
-            <label class="choice">
-              <span><input type="radio" name="package" value="gold"> Gold</span>
-              <small>M1,100</small>
-            </label>
-            <label class="choice">
-              <span><input type="radio" name="package" value="platinum"> Platinum</span>
-              <small>M1,300</small>
-            </label>
-          </div>
+          <div class="choices" id="packageChoices"></div>
         </fieldset>
         <button type="button" class="btn-primary" id="confirmBtn" disabled>Confirm and check in</button>
         <div id="status" class="status" role="status" aria-live="polite"></div>
@@ -182,6 +178,7 @@
         <div class="outcome success">
           <div class="mark" aria-hidden="true">✓</div>
           <p class="welcome" id="welcomeMessage">Finding your booking…</p>
+          <a class="btn-primary dashboard-btn" id="dashboardBtn" href="guest-dashboard.html" hidden>View my dashboard</a>
         </div>
       </div>
 
@@ -217,21 +214,53 @@
       panel.classList.add('visible');
     }
 
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s == null ? '' : String(s);
+      return div.innerHTML;
+    }
+
     function selectedPackage() {
       const chosen = document.querySelector('input[name="package"]:checked');
       return chosen ? chosen.value : '';
     }
 
-    document.querySelectorAll('input[name="package"]').forEach((input) => {
-      input.addEventListener('change', () => {
-        confirmBtn.disabled = !selectedPackage();
-        statusEl.className = 'status';
-        statusEl.textContent = '';
-      });
+    document.getElementById('packageChoices').addEventListener('change', () => {
+      confirmBtn.disabled = !selectedPackage();
+      statusEl.className = 'status';
+      statusEl.textContent = '';
     });
 
-    function showWelcome(message) {
+    async function loadPackageChoices() {
+      const box = document.getElementById('packageChoices');
+      try {
+        const res = await fetch('/api/packages');
+        const data = await res.json();
+        const packages = data.packages || [];
+        if (!packages.length) {
+          box.innerHTML = '<p>No packages are available yet. Please speak to the door team.</p>';
+          return;
+        }
+        box.innerHTML = packages.map((pkg) => `
+          <label class="choice">
+            <span><input type="radio" name="package" value="${pkg.id}"> ${escapeHtml(pkg.name)}</span>
+            ${pkg.price ? `<small>${escapeHtml(pkg.price)}</small>` : ''}
+          </label>
+        `).join('');
+      } catch {
+        box.innerHTML = '<p>Unable to load packages. Please try again.</p>';
+      }
+    }
+
+    function showWelcome(message, token) {
       welcomeMessage.textContent = message;
+      const dashboardBtn = document.getElementById('dashboardBtn');
+      if (token) {
+        sessionStorage.setItem('guest_dashboard_token', token);
+        dashboardBtn.hidden = false;
+      } else {
+        dashboardBtn.hidden = true;
+      }
       show(welcomePanel);
     }
 
@@ -243,15 +272,16 @@
       }
       document.getElementById('displayName').textContent = name;
       show(confirmPanel);
+      await loadPackageChoices();
       try {
         const res = await fetch('/api/check-in', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name })
+          body: JSON.stringify({ id: Number(id), name })
         });
         const data = await res.json();
         if (data.status === 'already_checked_in' && data.message) {
-          showWelcome(data.message);
+          showWelcome(data.message, data.dashboardToken);
         }
       } catch {
         /* The confirm step still works if this lookup fails. */
@@ -278,7 +308,7 @@
         });
         const data = await res.json();
         if (data.message && (data.status === 'checked_in' || data.status === 'already_checked_in')) {
-          showWelcome(data.message);
+          showWelcome(data.message, data.dashboardToken);
           return;
         }
         statusEl.className = 'status visible error';

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <script>try{if(localStorage.getItem('theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Packages | Sip &amp; Paint</title>
+  <link rel="icon" href="assets/Sip%20%26%20Paint%20poster.jpeg" type="image/jpeg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,560&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="theme.css?v=2">
+  <style>
+    :root {
+      --navy: #1b2a6b;
+      --navy-deep: #14204f;
+      --ice: #fff4ea;
+      --ink: #1b2444;
+      --muted: #6e5b54;
+      --shadow: rgba(180, 72, 32, 0.14);
+      --success: #1c7a4a;
+      --line: #f0d2c2;
+    }
+    body { min-height: 100vh; padding: 2rem; color: var(--ink); }
+    .wrap { max-width: 760px; margin: 0 auto; }
+    .admin-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .admin-header img {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      object-position: center 18%;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 4px 16px var(--shadow);
+    }
+    .brand-line {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--navy);
+      margin-bottom: 0.15rem;
+    }
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: var(--navy-deep);
+      text-transform: uppercase;
+      letter-spacing: -0.01em;
+    }
+    .back { margin-bottom: 1rem; }
+    .back a { color: var(--navy); text-decoration: none; font-weight: 600; }
+    .back a:hover { text-decoration: underline; }
+    .logout { float: right; margin-right: 3.25rem; }
+    .panel {
+      background: #fff;
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px var(--shadow);
+      margin-bottom: 1.25rem;
+    }
+    .add-form { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; }
+    .field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; min-width: 140px; }
+    .field label { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+    .field input, .pkg-card input[type="text"] {
+      padding: 0.6rem 0.8rem;
+      border: 1.5px solid var(--line);
+      border-radius: 8px;
+      font-family: inherit;
+      background: #fff;
+      color: var(--ink);
+    }
+    button {
+      padding: 0.6rem 1.2rem;
+      background: linear-gradient(180deg, var(--sunset, #f18a3c), var(--coral, #e4562e));
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .lead { color: var(--muted); margin-bottom: 1rem; font-size: 0.95rem; }
+    .pkg-board { display: grid; gap: 0.75rem; }
+    .pkg-card { border: 1px solid var(--line); border-radius: 10px; padding: 0.85rem 1rem; background: #fff; }
+    .pkg-card-head, .pkg-item-row, .pkg-add { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .pkg-items { list-style: none; margin: 0.55rem 0; padding: 0; }
+    .pkg-item-row { padding: 0.2rem 0; }
+    .pkg-mini { padding: 0.28rem 0.55rem !important; font-size: 0.78rem !important; border-radius: 6px !important; }
+    button.pkg-mini.secondary { background: #fff; color: var(--navy); border: 1px solid var(--line); }
+    button.pkg-mini.danger { background: #b42318; }
+    .pkg-save { font-size: 0.9rem; margin: 0.75rem 0 0; min-height: 1.2em; }
+    .pkg-save.ok { color: var(--success); }
+    .pkg-save.err { color: #b42318; }
+    .login-card {
+      max-width: 380px;
+      margin: 4rem auto;
+      padding: 2rem;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 12px 48px var(--shadow);
+      text-align: center;
+    }
+    .login-card input[type="password"] {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      margin: 0.5rem 0 1rem;
+      border: 1.5px solid var(--line);
+      border-radius: 8px;
+    }
+    .login-error { color: #b42318; font-size: 0.9rem; margin-bottom: 0.75rem; }
+    .site-credit { margin: 1.75rem 0 0.25rem; font-size: 0.68rem; color: #9aa6bc; text-align: center; }
+    html[data-theme="dark"] .panel,
+    html[data-theme="dark"] .pkg-card,
+    html[data-theme="dark"] .login-card,
+    html[data-theme="dark"] .admin-header img { background: #241811; }
+    html[data-theme="dark"] .field input,
+    html[data-theme="dark"] .pkg-card input[type="text"],
+    html[data-theme="dark"] .login-card input[type="password"],
+    html[data-theme="dark"] button.pkg-mini.secondary {
+      background: #2a211c;
+      color: #ffe8df;
+      border-color: #4a382f;
+    }
+    @media (max-width: 700px) {
+      body { padding: 1rem; }
+      .logout { float: none; display: block; margin: 0.5rem 0 0; }
+      .add-form { flex-direction: column; }
+      .add-form button, .field input { width: 100%; min-height: 48px; }
+    }
+  </style>
+</head>
+<body>
+  <button type="button" id="themeToggle" class="theme-toggle" aria-label="Switch to dark mode" aria-pressed="false"></button>
+
+  <div id="loginScreen" class="login-card" style="display: none;">
+    <h1>Admin access</h1>
+    <p style="color: var(--muted); margin-bottom: 1rem;">Sip &amp; Paint · Packages</p>
+    <p id="loginError" class="login-error" style="display: none;"></p>
+    <input id="adminPassword" type="password" placeholder="Password" autocomplete="current-password">
+    <button type="button" id="loginBtn" style="width: 100%;">Log in</button>
+    <p class="back" style="margin-top: 1.5rem;"><a href="admin.html">← Back to admin</a></p>
+  </div>
+
+  <div id="page" class="wrap" style="display: none;">
+    <p class="back">
+      <a href="admin.html">← Back to admin</a>
+      <span class="logout"><button type="button" id="logoutBtn" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">Log out</button></span>
+    </p>
+    <div class="admin-header">
+      <img src="assets/Sip &amp; Paint poster.jpeg" alt="Sip and Paint">
+      <div>
+        <p class="brand-line">Vibe Curators · Tequila Sunrise</p>
+        <h1>Packages</h1>
+      </div>
+    </div>
+
+    <div class="panel">
+      <p class="lead">Create packages for guests and the items provided with each one.</p>
+      <div class="add-form">
+        <div class="field">
+          <label for="newPackageName">New package</label>
+          <input id="newPackageName" type="text" placeholder="Package name">
+        </div>
+        <div class="field">
+          <label for="newPackagePrice">Price (optional)</label>
+          <input id="newPackagePrice" type="text" placeholder="M800">
+        </div>
+        <button type="button" id="addPackageBtn">Add package</button>
+      </div>
+      <p id="packageManagerStatus" class="pkg-save" role="status"></p>
+    </div>
+
+    <div class="pkg-board" id="packageManagerList"></div>
+    <footer class="site-credit">Designed &amp; Developed by Kutlo Molisana</footer>
+  </div>
+
+  <script src="theme.js"></script>
+  <script>
+    const ADMIN_TOKEN_KEY = 'admin_token';
+    let packageOptions = [];
+
+    function getAuthHeaders() {
+      const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+      return token ? { 'X-Admin-Token': token } : {};
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s == null ? '' : String(s);
+      return div.innerHTML;
+    }
+
+    function showLogin() {
+      document.getElementById('loginScreen').style.display = 'block';
+      document.getElementById('page').style.display = 'none';
+    }
+
+    function showPage() {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('page').style.display = 'block';
+      loadPackages();
+    }
+
+    async function doLogin() {
+      const password = document.getElementById('adminPassword').value;
+      const errEl = document.getElementById('loginError');
+      errEl.style.display = 'none';
+      if (!password) {
+        errEl.textContent = 'Please enter the password.';
+        errEl.style.display = 'block';
+        return;
+      }
+      try {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if (data.token) {
+          sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
+          showPage();
+        } else {
+          errEl.textContent = data.error || 'Invalid password.';
+          errEl.style.display = 'block';
+        }
+      } catch {
+        errEl.textContent = 'Could not connect.';
+        errEl.style.display = 'block';
+      }
+    }
+
+    async function doLogout() {
+      try {
+        await fetch('/api/admin/logout', { method: 'POST', headers: getAuthHeaders() });
+      } catch (_) {}
+      sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+      showLogin();
+    }
+
+    function setStatus(ok, message) {
+      const el = document.getElementById('packageManagerStatus');
+      el.className = 'pkg-save ' + (ok ? 'ok' : 'err');
+      el.textContent = message || '';
+    }
+
+    function renderPackages() {
+      const list = document.getElementById('packageManagerList');
+      if (!packageOptions.length) {
+        list.innerHTML = '<div class="panel">No packages yet. Add the first one above.</div>';
+        return;
+      }
+      list.innerHTML = packageOptions.map((pkg) => `
+        <div class="pkg-card">
+          <div class="pkg-card-head">
+            <strong>${escapeHtml(pkg.name)}</strong>
+            ${pkg.price ? `<span>${escapeHtml(pkg.price)}</span>` : ''}
+            <button type="button" class="pkg-mini secondary" data-pkg-action="rename-package" data-id="${pkg.id}">Rename</button>
+            <button type="button" class="pkg-mini danger" data-pkg-action="delete-package" data-id="${pkg.id}">Remove</button>
+          </div>
+          <ul class="pkg-items">
+            ${(pkg.items || []).map((item) => `
+              <li class="pkg-item-row">
+                <span>${escapeHtml(item.name)}</span>
+                <button type="button" class="pkg-mini secondary" data-pkg-action="rename-item" data-id="${item.id}">Edit</button>
+                <button type="button" class="pkg-mini danger" data-pkg-action="remove-item" data-id="${item.id}">Remove</button>
+              </li>
+            `).join('') || '<li>No items yet.</li>'}
+          </ul>
+          <div class="pkg-add">
+            <input type="text" placeholder="Item name" data-item-input="${pkg.id}" aria-label="Item for ${escapeHtml(pkg.name)}">
+            <button type="button" class="pkg-mini" data-pkg-action="add-item" data-id="${pkg.id}">Add item</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function loadPackages() {
+      try {
+        const res = await fetch('/api/admin/packages', { headers: getAuthHeaders() });
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        packageOptions = data.packages || [];
+        renderPackages();
+      } catch {
+        setStatus(false, 'Could not load packages.');
+      }
+    }
+
+    async function addPackage() {
+      const name = document.getElementById('newPackageName').value.trim();
+      const price = document.getElementById('newPackagePrice').value.trim();
+      if (!name) {
+        setStatus(false, 'Enter a package name.');
+        return;
+      }
+      try {
+        const res = await fetch('/api/admin/packages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ name, price })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not add that package.');
+        document.getElementById('newPackageName').value = '';
+        document.getElementById('newPackagePrice').value = '';
+        setStatus(true, 'Package saved.');
+        await loadPackages();
+      } catch (err) {
+        setStatus(false, err.message || 'Could not add that package.');
+      }
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', doLogin);
+    document.getElementById('adminPassword').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doLogin();
+    });
+    document.getElementById('logoutBtn').addEventListener('click', doLogout);
+    document.getElementById('addPackageBtn').addEventListener('click', addPackage);
+    document.getElementById('newPackageName').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addPackage();
+    });
+
+    document.getElementById('page').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-pkg-action]');
+      if (!btn) return;
+      const id = parseInt(btn.dataset.id, 10);
+      const action = btn.dataset.pkgAction;
+      try {
+        if (action === 'rename-package') {
+          const current = packageOptions.find((pkg) => pkg.id === id);
+          const name = prompt('Package name', current ? current.name : '');
+          if (name == null) return;
+          const price = prompt('Price (optional)', current && current.price ? current.price : '');
+          if (price == null) return;
+          const res = await fetch('/api/admin/packages/' + id, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ name: name.trim(), price: price.trim() })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not rename that package.');
+          setStatus(true, 'Package saved.');
+          await loadPackages();
+          return;
+        }
+        if (action === 'delete-package') {
+          if (!confirm('Remove this package? Guests already booked on it keep their package and item history.')) return;
+          const res = await fetch('/api/admin/packages/' + id, { method: 'DELETE', headers: getAuthHeaders() });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not remove that package.');
+          setStatus(true, 'Package removed. Existing bookings are unchanged.');
+          await loadPackages();
+          return;
+        }
+        if (action === 'add-item') {
+          const input = document.querySelector(`input[data-item-input="${id}"]`);
+          const name = input ? input.value.trim() : '';
+          if (!name) {
+            setStatus(false, 'Enter an item name.');
+            return;
+          }
+          const res = await fetch('/api/admin/packages/' + id + '/items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ name })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not add that item.');
+          setStatus(true, 'Item saved.');
+          await loadPackages();
+          return;
+        }
+        if (action === 'rename-item') {
+          const item = packageOptions.flatMap((pkg) => pkg.items || []).find((entry) => entry.id === id);
+          const name = prompt('Item name', item ? item.name : '');
+          if (name == null) return;
+          const res = await fetch('/api/admin/package-items/' + id, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({ name: name.trim() })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not update that item.');
+          setStatus(true, 'Item saved.');
+          await loadPackages();
+          return;
+        }
+        if (action === 'remove-item') {
+          if (!confirm('Remove this item? Checks already recorded for it are kept.')) return;
+          const res = await fetch('/api/admin/package-items/' + id, { method: 'DELETE', headers: getAuthHeaders() });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Could not remove that item.');
+          setStatus(true, 'Item removed.');
+          await loadPackages();
+        }
+      } catch (err) {
+        setStatus(false, err.message || 'Could not save that change.');
+      }
+    });
+
+    if (sessionStorage.getItem(ADMIN_TOKEN_KEY)) showPage();
+    else showLogin();
+  </script>
+</body>
+</html>
